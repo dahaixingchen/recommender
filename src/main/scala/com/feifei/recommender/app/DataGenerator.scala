@@ -1,4 +1,4 @@
-package com.feifei.recommender
+package com.feifei.recommender.app
 
 import java.io.{FileOutputStream, PrintWriter}
 import java.lang.Math._

@@ -1,9 +1,6 @@
-package com.feifei.recommender
+package com.feifei.recommender.app
 
 import org.apache.spark.mllib.linalg.SparseVector
-import org.apache.spark.SparkConf
-import org.apache.spark.SparkContext
-import scala.Array
 
 object TestVector {
   def main(args: Array[String]): Unit = {

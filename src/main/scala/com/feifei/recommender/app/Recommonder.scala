@@ -1,34 +1,29 @@
-package com.feifei.recommender
+package com.feifei.recommender.app
 
 import java.io.PrintWriter
 
-import org.apache.log4j.{ Level, Logger }
-import org.apache.spark.mllib.classification.{ LogisticRegressionWithLBFGS, LogisticRegressionModel, LogisticRegressionWithSGD }
+import org.apache.log4j.{Level, Logger}
+import org.apache.spark.mllib.classification.{LogisticRegressionModel, LogisticRegressionWithSGD}
 import org.apache.spark.mllib.linalg.SparseVector
-import org.apache.spark.mllib.optimization.SquaredL2Updater
 import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.util.MLUtils
 import org.apache.spark.rdd.RDD
-import org.apache.spark.{ SparkContext, SparkConf }
+import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.Map
 
 /**
-  *
+  *特征数据
+  * 1	Item.id,hitop_id38:1;Item.screen,screen6:1;Item.name,ch_name63:1;All,0:1;Item.author,author5:1;Item.sversion,sversion3:1;Item.network,x:1;Item.dgner,designer8:1;Item.icount,3:1;Item.stars,0.86:1;Item.comNum,11:1;Item.font,font11:1;Item.price,5136:1;Item.fsize,2:1;Item.ischarge,1:1;Item.downNum,500:1;User.Item*Item,hitop_id59*hitop_id38:1;User.Item*Item,hitop_id85*hitop_id38:1;User.Item*Item,hitop_id67*hitop_id38:1;User.phone*Item,device_name228*hitop_id38:1;User.pay*Item.price,pay_ability1*5136:1
   */
-class Recommonder {
-
-}
-
 object Recommonder {
   def main(args: Array[String]) {
     Logger.getLogger("org.apache.spark").setLevel(Level.ERROR)
     val conf = new SparkConf().setAppName("recom").setMaster("local[*]")
     val sc = new SparkContext(conf)
     //加载数据，用\t分隔开
-    val data: RDD[Array[String]] = sc.textFile("result").map(_.split("\t"))
+    val data: RDD[Array[String]] = sc.textFile("data/result").map(_.split("\t"))
 
-    //得到第一列的值，也就是label
+    //得到第一列的值，也就是label ,也就是逻辑回归算法中的Y值
     /**
      * -1	Item.id,hitop_id74:1;Item.screen,screen1:1
      */
@@ -36,8 +31,9 @@ object Recommonder {
     //sample这个RDD中保存的是每一条记录的特征名
     val sample: RDD[Array[String]] = data.map(_(1)).map(x => {
       //这条记录的所有的特征名
+//      Item.id,hitop_id38:1;Item.screen,screen6:1;Item.name,ch_name63:1;All,0:1;
       val arr: Array[String] = x.split(";").map(_.split(":")(0))
-      arr  
+      arr
     })
     //将所有元素压平，得到的是所有分特征，然后去重，最后索引化，也就是加上下标，最后转成map是为了后面查询用
     /**
@@ -59,6 +55,8 @@ object Recommonder {
       *
       * sample：保存的时每一条记录的特征名
       * dict  K：特征名  V：索引号[0 , dict.length-1]
+      *
+      * sample的值 [(Item.id,hitop_id38),(Item.screen,screen6),(Item.name,ch_name63),(All,0)]
       */
     val dict: Map[String, Long] = sample.flatMap(x =>x).distinct().zipWithIndex().collectAsMap()
     //得到稀疏向量
@@ -66,6 +64,7 @@ object Recommonder {
       //index中保存的是，未来在构建训练集时，下面填1的索引号集合
       val index: Array[Int] = sampleFeatures.map(feature => {
         //get出来的元素程序认定可能为空，做一个类型匹配
+//       dict的值 ((Item.id,1 ) ,(hitop_id38,2) ,(Item.screen,3) ,(screen6,4), (Item.name,5) ,(ch_name63,6),(All,7) ,(0,8))
         val rs: Long = dict.get(feature).get
         //非零元素下标，转int符合SparseVector的构造函数
         rs.toInt
@@ -87,7 +86,7 @@ object Recommonder {
 //    la.sample(true, 0.001).saveAsTextFile("testSet")
 //    println("done")
 
-     
+
     //逻辑回归训练，两个参数，迭代次数和步长，生产常用调整参数
      val lr = new LogisticRegressionWithSGD()
     // 设置W0截距
@@ -112,7 +111,7 @@ object Recommonder {
     //模型保存
     //    LogisticRegressionModel.load()
     //输出
-    val pw = new PrintWriter("./model");
+    val pw = new PrintWriter("./data/model");
     //遍历
     for(i<- 0 until weights.length){
       //通过map得到每个下标相应的特征名
@@ -121,11 +120,11 @@ object Recommonder {
         case None => ""
       }
       //特征名对应相应的权重
-      val str = featureName+"\t" + weights(i)
+      val str = featureName + "\t" + weights(i)
       pw.write(str)
       pw.println()
     }
     pw.flush()
-    pw.close() 
+    pw.close()
   }
 }
