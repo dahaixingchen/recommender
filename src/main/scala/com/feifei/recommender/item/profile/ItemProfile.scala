@@ -14,7 +14,7 @@ object ItemProfile {
     val sqlText = "SELECT b.id, a.keyword, b.create_date, b.air_date, b.length " +
                         ", b.content_model, b.area, b.language, b.quality, b.is_3d " +
                   "FROM tmp_program.item_keyword a " +
-                        "JOIN program.item_info b ON a.item_id = b.id ";
+                        "JOIN recommender.item_info b ON a.item_id = b.id ";
     val restDF = session.sql(sqlText)
     restDF
       .write

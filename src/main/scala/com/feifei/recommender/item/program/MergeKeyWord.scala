@@ -25,7 +25,7 @@ object MergeKeyWord {
       "   JOIN keyword_tfidf k ON (w.item_id = k.item_id) " +
       "GROUP BY w.item_id"
     val mergeDF = session.sql(sqlText)
-    session.sql("create table if not exists item_keyword(item_id long,keyword string)")
+    session.sql("create table if not exists item_keyword(item_id long,keyword array<string>)")
     mergeDF.rdd.map(row => {
       val itemID = row.getAs[Long]("item_id")
       val keyword1 = row.getAs[Seq[String]]("keyword1")

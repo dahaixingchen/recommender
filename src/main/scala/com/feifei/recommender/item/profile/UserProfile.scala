@@ -7,6 +7,8 @@ import org.apache.spark.sql.Row
 import com.feifei.recommender.item.util.{DataUtils, HBaseUtil, PropertiesUtils, SparkSessionBase}
 import java.util
 
+import org.apache.spark.rdd.RDD
+
 import scala.collection.mutable.ListBuffer
 
 object UserProfile {
@@ -15,6 +17,7 @@ object UserProfile {
   def main(args: Array[String]): Unit = {
 
     val session = SparkSessionBase.createSparkSession()
+    session.sparkContext.setLogLevel("error")
     import session.implicits._
 
     val TOTAL_SCORE = 10
@@ -23,32 +26,31 @@ object UserProfile {
       * 绘制用户画像
       * 通过用户喜欢的节目来给用户打标签
       */
-    val userAction = session.table("program.user_action").limit(1000)
+    val userAction = session.table("recommender.user_action").limit(1000)
     val itemKeyWord = session.table("tmp_program.item_keyword")
-    val userInfo = session.table("program.user_info")
-    val itemInfo = session.table("program.item_info")
+    val userInfo = session.table("recommender.user_info")
+    val itemInfo = session.table("recommender.item_info")
 
     val itemID2ActionRDD = userAction.map(row => {
       val userID = row.getAs[String]("sn")
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id")
       val duration = row.getAs[Long]("duration")
       val time = row.getAs[String]("time")
       (itemID, (userID, duration, time))
     }).rdd
 
     val itemID2KeyWordRDD = itemKeyWord.map(row => {
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id")
       val keywords = row.getAs[Seq[String]]("keyword")
       (itemID, keywords)
     }).rdd
 
-    val userID2InfoRDD = userInfo.map(row => {
+    val userID2InfoRDD: RDD[(String, (String, String))] = userInfo.map(row => {
       val userID = row.getAs[String]("sn")
       val province = row.getAs[String]("province")
       val city = row.getAs[String]("city")
       (userID, (province, city))
     }).rdd
-
 
     /**
       * 通过用户喜欢的节目来为用户打标签，同时还要通过duration停留时间为标签打分值
@@ -58,7 +60,7 @@ object UserProfile {
       */
     //获取每一个节目的总时长
     val itemID2LengthMap = itemInfo.map(row => {
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("id")
       val length = row.getAs[Long]("length")
       (itemID, length)
     }).collect().toMap
@@ -72,7 +74,13 @@ object UserProfile {
      * （1）从源头上根据duration来筛选
      * （2）在join计算的通过技术手段解决数据倾斜问题
      * */
-    val userID2LabelRDD = itemID2ActionRDD
+//    itemID2ActionRDD.take(10).foreach(println)
+//    println("info的数据开始，，，，，，，，，，，，，，")
+//    itemID2KeyWordRDD.take(10).foreach(println)
+//    session.sql("select * from tmp_program.item_keyword a join recommender.user_action b on a.item_id=b.item_id")
+//      .show(10)
+
+    val userID2LabelRDD: RDD[(String, (Long, String, ListBuffer[String], Double))] = itemID2ActionRDD
       .join(itemID2KeyWordRDD)
       .map(item => {
         val itemID = item._1
@@ -91,10 +99,10 @@ object UserProfile {
           val attenCoeff = 1 / (math.log(days) + 1)
           attenCoeff * scalaScore
         } else 0.0
-        ((itemID,userID),(duration, time, keywords, score))
+        ((itemID, userID), (duration, time, keywords, score))
       }).groupByKey()
-      .map(item =>{
-        val (itemID,userID) = item._1
+      .map(item => {
+        val (itemID, userID) = item._1
         var time = ""
         var keywords = new ListBuffer[String]()
         var score = 0.0
@@ -104,13 +112,13 @@ object UserProfile {
           if (score < elem._4) score = elem._4
           if (keywords.length == 0) keywords.++=(elem._3)
         }
-        (userID,(itemID,time,keywords,score))
+        (userID, (itemID, time, keywords, score))
       })
 
     /**
       * 补全用户画像，补充用户基础信息 并且存储的到HBase数据库
       */
-    val tmpRDD = userID2LabelRDD.join(userID2InfoRDD)
+    val temRdd: RDD[(String, Iterable[(Long, String, ListBuffer[String], Double, String, String)])] = userID2LabelRDD.join(userID2InfoRDD)
       .map(data => {
         val userID = data._1
         val itemID = data._2._1._1
@@ -119,12 +127,14 @@ object UserProfile {
         val score = data._2._1._4
         val province = data._2._2._1
         val city = data._2._2._2
-        ((userID), (itemID,time, keywords, score, province, city))
+        ((userID), (itemID, time, keywords, score, province, city))
       }).groupByKey()
-        .foreachPartition(partition => {
+    temRdd.foreach(println)
+    temRdd.foreachPartition(partition => {
           for (row <- partition) {
             val userID = row._1
             val profiles = row._2
+
             saveUserProfileToHBase(userID,profiles)
           }
         })
@@ -177,7 +187,7 @@ object UserProfile {
     *
     *  itemID: Int, keywords: ListBuffer[String], score: Double, province: String, city: String
     */
-  def saveUserProfileToHBase(userID: String, profiles:Iterable[(Int, String, ListBuffer[String], Double, String, String)]): Unit = {
+  def saveUserProfileToHBase(userID: String, profiles:Iterable[(Long, String, ListBuffer[String], Double, String, String)]): Unit = {
     val tableName = PropertiesUtils.getProp("user.profile.hbase.table")
     val htable = HBaseUtil.getUserProfileTable(tableName)
     val put = new Put(Bytes.toBytes(userID))
