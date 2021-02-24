@@ -3,7 +3,7 @@ package com.feifei.recommender.item.program
 import com.feifei.recommender.item.util.{SegmentWordUtil, SparkSessionBase}
 import org.apache.spark.ml.feature.{CountVectorizer, CountVectorizerModel, IDF, IDFModel}
 import org.apache.spark.ml.linalg.SparseVector
-import org.apache.spark.sql.{DataFrame, SaveMode}
+import org.apache.spark.sql.{DataFrame, SaveMode, SparkSession}
 
 import scala.collection.mutable.ListBuffer
 
@@ -14,7 +14,7 @@ import scala.collection.mutable.ListBuffer
 object ComputeTFIDF {
   def main(args: Array[String]): Unit = {
     //通过SparkSessionBase创建Spark会话
-    val session = SparkSessionBase.createSparkSession()
+    val session:SparkSession = SparkSessionBase.createSparkSession()
     session.sparkContext.setLogLevel("error")
     import session.implicits._
     /**
@@ -24,7 +24,7 @@ object ComputeTFIDF {
       */
     session.sql("use recommender")
     //获取节目信息，然后对其进行分词
-    val articleDF = session.sql("select * from recommender.item_info limit 20")
+    val articleDF: DataFrame = session.sql("select * from recommender.item_info limit 20")
     //        val articleDF = session.table("item_info")
     //    articleDF.show()
 
@@ -54,8 +54,8 @@ object ComputeTFIDF {
     //        cvModel.vocabulary.foreach(println)
 
 
-    val cv_result = cvModel.transform(words_df)
-//        cv_result.show(false)
+    val cv_result: DataFrame = cvModel.transform(words_df)
+    cv_result.show(false)
 
 
     //创建IDF对象
@@ -74,7 +74,7 @@ object ComputeTFIDF {
       * word ： idf值
       */
         session.read.parquet("hdfs://mycluster/recommender/models/IDF.model/data")
-          .show(10,false)
+          .show(false)
 
         /**
           * 将每个单词对应的IDF（逆文档频率） 保存在Hive表中

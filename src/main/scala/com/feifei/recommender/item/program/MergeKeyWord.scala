@@ -6,6 +6,7 @@ import com.feifei.recommender.item.util.SparkSessionBase
 object MergeKeyWord {
   def main(args: Array[String]): Unit = {
     val session = SparkSessionBase.createSparkSession()
+    session.sparkContext.setLogLevel("error")
     import session.implicits._
     session.sql("use tmp_program")
     /**
@@ -24,8 +25,9 @@ object MergeKeyWord {
       "   JOIN keyword_tfidf k ON (w.item_id = k.item_id) " +
       "GROUP BY w.item_id"
     val mergeDF = session.sql(sqlText)
+    session.sql("create table if not exists item_keyword(item_id long,keyword string)")
     mergeDF.rdd.map(row => {
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id")
       val keyword1 = row.getAs[Seq[String]]("keyword1")
       val keyword2 = row.getAs[Seq[String]]("keyword2")
       val keywords = keyword1.union(keyword2).distinct.toArray

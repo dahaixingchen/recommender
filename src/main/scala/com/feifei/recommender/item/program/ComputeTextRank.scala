@@ -1,8 +1,9 @@
 package com.feifei.recommender.item.program
 
 import com.feifei.recommender.item.algorithm.TextRank
-import org.apache.spark.sql.SaveMode
+import org.apache.spark.sql.{DataFrame, SaveMode}
 import com.feifei.recommender.item.util.{SegmentWordUtil, SparkSessionBase}
+import org.apache.spark.rdd.RDD
 
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
@@ -12,17 +13,21 @@ object ComputeTextRank {
   def main(args: Array[String]): Unit = {
     //通过SparkSessionBase创建Spark会话
     val session = SparkSessionBase.createSparkSession()
-    session.sql("use program")
+    session.sparkContext.setLogLevel("error")
+    session.sql("use recommender")
     //获取节目信息，然后对其进行分词
-//    val articleDF = session.sql("select * from item_info limit 20")
-    val articleDF = session.table("item_info")
+    val articleDF = session.sql("select * from item_info limit 20")
+//    val articleDF = session.table("item_info")
     val seg = new SegmentWordUtil()
     val wordsRDD = articleDF.rdd.mapPartitions(seg.segeFun)
 
     //计算每个节目 每个单词的TR值
     val tralgm = new TextRank()
-    val transformGraphRDD = wordsRDD.map(x => (x._1, tralgm.transform(x._2)))
-    val rankRDD = transformGraphRDD.map(x => (x._1, tralgm.rank(x._2)))
+    val transformGraphRDD: RDD[(Long, mutable.HashMap[String, mutable.HashSet[String]])]
+      = wordsRDD.map(x => (x._1, tralgm.transform(x._2)))
+
+    val rankRDD: RDD[(Long, mutable.HashMap[String, Double])]
+      = transformGraphRDD.map(x => (x._1, tralgm.rank(x._2)))
 //    rankRDD.foreach(println)
 
     /**
@@ -57,15 +62,16 @@ object ComputeTextRank {
     })
 
     //根据混合的weight值排序，选择topK个单词
-    val sortByWeightRDD = keyWordsWithWeightsRDD
+    val sortByWeightRDD: RDD[(Long, String, Double)] = keyWordsWithWeightsRDD
       .filter(_._2.size > 10)
       .map(x => (x._1, sortByWeights(x._2)))
       .flatMap(explode)
 
     //keyWordsWithWeightsRDD转成DF
     import session.implicits._
-    val word2WeightsDF = sortByWeightRDD.toDF("item_id", "word", "weight")
+    val word2WeightsDF: DataFrame = sortByWeightRDD.toDF("item_id", "word", "weight")
     session.sql("use tmp_program")
+    session.sql("create table if not exists keyword_tr(item_id long,word string,weight double)")
     word2WeightsDF.write.mode(SaveMode.Overwrite).insertInto("keyword_tr")
 
     /**
