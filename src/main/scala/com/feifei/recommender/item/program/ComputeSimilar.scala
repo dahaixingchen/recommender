@@ -1,18 +1,19 @@
 package com.feifei.recommender.item.program
 
+import com.feifei.recommender.item.util.{HBaseUtil, PropertiesUtils, SparkSessionBase}
 import org.apache.hadoop.hbase.client.Put
-import org.apache.hadoop.hbase.mapreduce.TableOutputFormat
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.spark.ml.feature.{BucketedRandomProjectionLSH, Word2VecModel}
 import org.apache.spark.ml.linalg.{DenseVector, SparseVector}
-import org.apache.spark.sql.Row
-import com.feifei.recommender.item.util.{HBaseUtil, PropertiesUtils, SparkSessionBase}
+import org.apache.spark.sql.{Row, SaveMode}
 
 import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 
 /**
   * ntpdate ntp1.aliyun.com
+  * 计算每个节目的向量存入到hive表中
+  * 根据LSH（局部敏感hash算法）把每个节目的跟其他节目的距离算好放入HBASE中
   */
 object ComputeSimilar {
 
@@ -20,6 +21,7 @@ object ComputeSimilar {
   def main(args: Array[String]): Unit = {
 
     val session = SparkSessionBase.createSparkSession()
+    session.sparkContext.setLogLevel("error")
     session.sql("use tmp_program")
     import session.implicits._
 
@@ -34,7 +36,7 @@ object ComputeSimilar {
     val word2WeightBroad = session.sparkContext.broadcast(word2Weight)
 
 
-    val word2VecModel = Word2VecModel.load("hdfs://node01:9000/recommond_program/models/w2v.model")
+    val word2VecModel = Word2VecModel.load("hdfs://mycluster/recommender/models/w2v.model")
     val word2VecMap = word2VecModel.getVectors.collect().map(row => {
       val vector = breeze.linalg.DenseVector(row.getAs[DenseVector]("vector").toArray)
       val word = row.getAs[String]("word")
@@ -58,7 +60,7 @@ object ComputeSimilar {
       val word2VecMap = word2VecMapBroad.value
       val word2Weight = word2WeightBroad.value
       val word2Index = word2IndexBroad.value
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id")
       val keywords = row.getAs[Seq[String]]("keyword")
       var index = 0
       val indexs = new ArrayBuffer[Int]()
@@ -82,7 +84,9 @@ object ComputeSimilar {
       (itemID, vector.toDense)
     }
     ).toDF("item_id", "features")
-    //    featuresDF.write.mode(SaveMode.Overwrite).saveAsTable("tmp_keyword_weight")
+    //    featuresDF.show(10,false)
+    session.sql("create table if not exists tmp_keyword_weight(item_id long,features array<double>)")
+    featuresDF.write.mode(SaveMode.Overwrite).saveAsTable("tmp_keyword_weight")
 
     val rddArr = featuresDF.randomSplit(Array(0.7, 0.3))
     val train = rddArr(0)
@@ -96,6 +100,7 @@ object ComputeSimilar {
     val model = brpls.fit(train)
 
     val similar = model.approxSimilarityJoin(featuresDF, featuresDF, 2.0, "EuclideanDistance")
+
     /**
       * 分到同一个桶中
       * +--------------------+--------------------+-----------------+
@@ -113,19 +118,20 @@ object ComputeSimilar {
       * |[368514, [0.0,8.2...|[393038, [0.0,8.2...|              0.0|
       * +--------------------+--------------------+-----------------+
       */
-
+    similar.show(10)
     val tableName = PropertiesUtils.getProp("similar.hbase.table")
     similar.toDF()
       .rdd
       .foreachPartition(partition => {
         val conf = HBaseUtil.getHBaseConfiguration()
-//        conf.set(TableOutputFormat.OUTPUT_TABLE, tableName)
-        val htable = HBaseUtil.getTable(conf,tableName)
+        //        conf.set(TableOutputFormat.OUTPUT_TABLE, tableName)
+        val htable = HBaseUtil.getTable(conf, tableName)
         for (row <- partition) {
-          if (row.getAs[Double]("EuclideanDistance") < 1) {
-            val aItemID = row.getAs[Row]("datasetA").getAs[Int](0)
-            val bItemID = row.getAs[Row]("datasetB").getAs[Int](0)
+          if (row.getAs[Double]("EuclideanDistance") < 2) {
+            val aItemID = row.getAs[Row]("datasetA").getAs[Long](0)
+            val bItemID = row.getAs[Row]("datasetB").getAs[Long](0)
             val dist = row.getAs[Double]("EuclideanDistance")
+            //不要存储同一个item的相似度
             if (aItemID != bItemID) {
               val put = new Put(Bytes.toBytes(aItemID + ""))
               put.addColumn(Bytes.toBytes("similar"), Bytes.toBytes(bItemID + ""), Bytes.toBytes(dist + ""))

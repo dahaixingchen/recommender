@@ -9,14 +9,17 @@ import org.apache.spark.rdd.RDD
 import com.feifei.recommender.item.util.{HBaseUtil, PropertiesUtils, SparkSessionBase}
 
 import scala.collection.mutable.ListBuffer
-
+/**
+ * 基于内容召回的代码实现
+ */
 object ContentRecall {
   def main(args: Array[String]): Unit = {
     val session = SparkSessionBase.createSparkSession()
     val df = session.sql(
       "SELECT a.sn, a.item_id,a.duration,b.length " +
-        "FROM program.user_action a " +
-        "JOIN program.item_info b ON a.item_id = b.item_id where a.sn != 'unknown' ")
+        "FROM recommender.user_action a " +
+        "JOIN recommender.item_info b ON a.item_id = b.id where a.sn != 'unknown' ")
+      .limit(1000)
 
     val itemID2userID = df.rdd.flatMap(row => {
       val list = new ListBuffer[(Int, String)]()
