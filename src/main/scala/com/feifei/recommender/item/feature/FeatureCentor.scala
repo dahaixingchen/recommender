@@ -5,12 +5,13 @@ import org.apache.hadoop.hbase.mapreduce.TableOutputFormat
 import org.apache.hadoop.hbase.util.Bytes
 import org.apache.spark.ml.linalg.SparseVector
 import com.feifei.recommender.item.util.{HBaseUtil, PropertiesUtils}
+import org.apache.spark.sql.DataFrame
 
 object FeatureCentor {
 
   def updateFeatureCentor={
 
-    val features = FeaturesFactory.getLRFeatures
+    val features: DataFrame = FeaturesFactory.getLRFeatures
 
     features.show(10)
     features.printSchema()

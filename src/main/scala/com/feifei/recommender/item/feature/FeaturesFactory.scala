@@ -87,8 +87,9 @@ object FeaturesFactory {
             }
           })
 
-          val indexs = words.map(dict.get(_).get.toInt).sorted
+          val indexs: Array[Int] = words.map(dict.get(_).get.toInt).sorted
 
+          //创建一个词袋大小的向量，并在词袋中有的关键字，节目中也有的对应的索引位置上填上score值，其他的为0
           val vector = new SparseVector(dict.size, indexs, Array.fill(indexs.length)(score))
           list.+=(((userID, itemID), vector.toDense))
         }
@@ -156,7 +157,7 @@ object FeaturesFactory {
       */
     val userID2ActionRDD = itemFeatureDF.rdd.map(row => {
       val sn = row.getAs[String]("sn")
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id").toInt
       val duration = row.getAs[Long]("duration")
       val features = row.getAs[DenseVector]("features")
       (sn, (itemID, duration, features))
@@ -165,7 +166,7 @@ object FeaturesFactory {
 
     val itemInfo = session.table("recommender.item_info")
     val itemID2LengthMap = itemInfo.map(row => {
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("id").toInt
       val length = row.getAs[Long]("length")
       (itemID, length)
     }).collect().toMap
