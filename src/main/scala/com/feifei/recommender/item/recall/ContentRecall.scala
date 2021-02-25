@@ -15,6 +15,7 @@ import scala.collection.mutable.ListBuffer
 object ContentRecall {
   def main(args: Array[String]): Unit = {
     val session = SparkSessionBase.createSparkSession()
+    session.sparkContext.setLogLevel("error")
     val df = session.sql(
       "SELECT a.sn, a.item_id,a.duration,b.length " +
         "FROM recommender.user_action a " +
@@ -25,12 +26,13 @@ object ContentRecall {
       val list = new ListBuffer[(Int, String)]()
       val userID = row.getAs[String]("sn")
       println(userID)
-      val itemID = row.getAs[Int]("item_id")
+      val itemID = row.getAs[Long]("item_id").toInt
       val duration = row.getAs[Long]("duration")
       val length = row.getAs[Long]("length")
 
       if (duration < length) {
         val scalaDuration = (duration * 1.0) / length
+        //过滤掉停留时间小于10%的数据
         if (scalaDuration > 0.1) {
           list.+=((itemID, userID))
         }

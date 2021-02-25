@@ -11,7 +11,9 @@ import org.apache.spark.sql.functions._
 import com.feifei.recommender.item.util.{HBaseUtil, PropertiesUtils, SparkSessionBase}
 
 import scala.collection.mutable.ListBuffer
-
+  /**
+   * 模型召回（行为召回）策略代码
+   */
 
 object ALSRecall {
 
@@ -19,6 +21,7 @@ object ALSRecall {
 
   def main(args: Array[String]): Unit = {
       val session = SparkSessionBase.createSparkSession()
+      session.sparkContext.setLogLevel("error")
       val table = PropertiesUtils.getProp("user.profile.hbase.table")
       val conf = HBaseConfiguration.create()
       conf.set("hbase.zookeeper.property.clientPort", PropertiesUtils.getProp("hbase.zookeeper.property.clientPort"))
