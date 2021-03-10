@@ -2,7 +2,11 @@ package com.feifei.recommender.item.program
 
 import org.apache.spark.sql.SaveMode
 import com.feifei.recommender.item.util.SparkSessionBase
-
+/**
+ * @todo: 合并tf-idf算法和TextRank算法取到的关键词
+ * @return
+ * @date: 2021/3/10 20:32
+ */
 object MergeKeyWord {
   def main(args: Array[String]): Unit = {
     val session = SparkSessionBase.createSparkSession()

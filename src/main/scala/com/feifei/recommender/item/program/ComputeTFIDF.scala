@@ -14,7 +14,7 @@ import scala.collection.mutable.ListBuffer
 object ComputeTFIDF {
   def main(args: Array[String]): Unit = {
     //通过SparkSessionBase创建Spark会话
-    val session:SparkSession = SparkSessionBase.createSparkSession()
+    val session: SparkSession = SparkSessionBase.createSparkSession()
     session.sparkContext.setLogLevel("error")
     import session.implicits._
     /**
@@ -29,7 +29,7 @@ object ComputeTFIDF {
     //    articleDF.show()
 
     //分词
-    val seg = new SegmentWordUtil()
+    val seg = new SegmentWordUtil() //将节目的描述、标题、名字等信息合并，最终返回 (item_id,  words)
     val words_df: DataFrame = articleDF.rdd.mapPartitions(seg.segeFun).toDF("item_id", "words")
     //    words_df.show(false)
 
@@ -45,17 +45,15 @@ object ComputeTFIDF {
 
     //训练词袋模型
     val cvModel: CountVectorizerModel = countVectorizer.fit(words_df)
-    //    //保存词袋模型到hdfs上
-//    cvModel.write.overwrite().save("hdfs://node02:9000/recommender/models/CV.model")
-    //
-    //    //通过spark sql读取模型内容
-    //    session.read.parquet("hdfs://node01:9000/recommond_program/models/CV.model/data/*").show()
-    //    //这是所有的词
-    //        cvModel.vocabulary.foreach(println)
+    //保存词袋模型到hdfs上
+    cvModel.write.overwrite().save("hdfs://mycluster/recommender/models/CV.model")
 
+    //通过spark sql读取模型内容
+    session.read.parquet("hdfs://mycluster/recommender/models/CV.model/data/*").show(false)
+    //这是词袋里所有的词
+//    cvModel.vocabulary.foreach(println)
 
-    val cv_result: DataFrame = cvModel.transform(words_df)
-    cv_result.show(false)
+    val cv_result: DataFrame = cvModel.transform(words_df) // 将模型变成DataFrame类型的数据
 
 
     //创建IDF对象
@@ -65,7 +63,6 @@ object ComputeTFIDF {
     //计算每个词的逆文档频率
     val idfModel: IDFModel = idf.fit(cv_result)
     idfModel.write.overwrite().save("hdfs://mycluster/recommender/models/IDF.model")
-//    idfModel.write.overwrite().save("hdfs://node02:9000/recommender/models/IDF.model")
 
     /**
       * tf：w1：10   w1：100
@@ -73,65 +70,68 @@ object ComputeTFIDF {
       * idf基于整个语料库计算出来的
       * word ： idf值
       */
-        session.read.parquet("hdfs://mycluster/recommender/models/IDF.model/data")
-          .show(false)
+    session.read.parquet("hdfs://mycluster/recommender/models/IDF.model/data")
+      .show(false)
 
-        /**
-          * 将每个单词对应的IDF（逆文档频率） 保存在Hive表中
-          */
-        //整理数据格式（index,word,IDF）
-        val keywordsWithIDFList = new ListBuffer[(Int, String, Double)]
-        val words = cvModel.vocabulary
-        val idfs = idfModel.idf.toArray
-        for (index <- 0 until (words.length)) {
-          keywordsWithIDFList += ((index, words(index), idfs(index)))
-        }
-        //保存数据
-        session.sql("use tmp_program")
-        session
-          .sparkContext
-          .parallelize(keywordsWithIDFList)
-          .toDF("index", "keywords", "idf")
-          .write
-          .mode(SaveMode.Overwrite)
-          .insertInto("keyword_idf")
-
-
-        //CVModel->CVResult->IDFModel->CVResult->TFIDFResult
-
-        val tfIdfResult = idfModel.transform(cv_result)
-        tfIdfResult.show()
-
-        //根据TFIDF来排序
-        val keyword2TFIDF = tfIdfResult.rdd.mapPartitions(partition => {
-          val rest = new ListBuffer[(Long, Int, Double)]
-          val topN = 20
-
-          while (partition.hasNext) {
-            val row = partition.next()
-            var idfVals: List[Double] = row.getAs[SparseVector]("features_tfidf").values.toList
-            val tmpList = new ListBuffer[(Int, Double)]
-
-            for (i <- 0 until (idfVals.length))
-              tmpList += ((i, idfVals(i)))
+    /**
+      * 将每个单词对应的IDF（逆文档频率） 保存在Hive表中
+      */
+    //整理数据格式（index,word,IDF）
+    val keywordsWithIDFList = new ListBuffer[(Int, String, Double)]
+    val words: Array[String] = cvModel.vocabulary //词袋模型
+    val idfs: Array[Double] = idfModel.idf.toArray //
+    for (index <- 0 until (words.length)) {
+      keywordsWithIDFList += ((index, words(index), idfs(index)))
+    }
+//    println(keywordsWithIDFList)
+    //保存数据
+    session.sql("use tmp_program")
+    session
+      .sparkContext
+      .parallelize(keywordsWithIDFList)
+      .toDF("index", "keywords", "idf")
+      .write
+      .mode(SaveMode.Overwrite)
+      .insertInto("keyword_idf")
 
 
-            val buffer = tmpList.sortBy(_._2).reverse
-            for (item <- buffer.take(topN))
-              rest += ((row.getAs[Long]("item_id"), item._1, item._2))
-          }
-          rest.iterator
-        }).toDF("item_id", "index", "tfidf")
-        keyword2TFIDF.show(10)
+    //CVModel->CVResult->IDFModel->CVResult->TFIDFResult
+
+    println("idf文档=================")
+    val idfResult = idfModel.transform(cv_result)
+    idfResult.show(false)
+
+    //根据TFIDF来排序
+    val keyword2TFIDF = idfResult.rdd.mapPartitions(partition => {
+      val rest = new ListBuffer[(Long, Int, Double)]
+      val topN = 20
+
+      while (partition.hasNext) {
+        val row = partition.next()
+        var idfVals: List[Double] = row.getAs[SparseVector]("features_tfidf").values.toList
+        println(idfVals)
+        val tmpList = new ListBuffer[(Int, Double)]
+
+        for (i <- 0 until (idfVals.length))
+          tmpList += ((i, idfVals(i)))
 
 
-        keyword2TFIDF.createGlobalTempView("keywordsByTable")
-        //获取索引对应的单词，组织格式 保存Hive表
-        session.sql("select * from keyword_idf a join global_temp.keywordsByTable b on a.index = b.index")
-          .select("b.item_id", "a.word", "b.tfidf")
-          .write
-          .mode(SaveMode.Overwrite)
-          .insertInto("keyword_tfidf")
+        val buffer = tmpList.sortBy(_._2).reverse
+        for (item <- buffer.take(topN))
+          rest += ((row.getAs[Long]("item_id"), item._1, item._2))
+      }
+      rest.iterator
+    }).toDF("item_id", "index", "tfidf")
+    keyword2TFIDF.show(10)
+
+
+    keyword2TFIDF.createGlobalTempView("keywordsByTable")
+    //获取索引对应的单词，组织格式 保存Hive表
+    session.sql("select * from keyword_idf a join global_temp.keywordsByTable b on a.index = b.index")
+      .select("b.item_id", "a.word", "b.tfidf")
+      .write
+      .mode(SaveMode.Overwrite)
+      .insertInto("keyword_tfidf")
     session.close()
   }
 }

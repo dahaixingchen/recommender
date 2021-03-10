@@ -5,7 +5,12 @@ import com.feifei.recommender.item.util.SparkSessionBase
 
 //    val itemKW = session.table("tmp_program.item_keyword")
 //    val itemInfo = session.table("program.item_info")
-
+/**
+ * @todo: 节目画像---把tf-idf和TextRank取到的关键词作为节目画像标签放到节目表中
+  *       这个的组合就是节目
+ * @return
+ * @date: 2021/3/10 20:33
+ */
 
 object ItemProfile {
   def main(args: Array[String]): Unit = {
