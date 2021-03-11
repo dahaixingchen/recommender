@@ -103,16 +103,18 @@ object UserProfile {
         } else 0.0
         ((itemID, userID), (duration, time, keywords, score))
       }).groupByKey() //然后根据UseID和ItemId分组（其实上面已经用ItemId分过组了），计算用户的便签和对应的分值
-      .map(item => {
+      .map(item => { // item相当于
         val (itemID, userID) = item._1
         var time = ""
         var keywords = new ListBuffer[String]()
         var score = 0.0
+
+        //当出现同一个用户重复观看一个节目的情况下，取值的情况，同时也对直观看过一次的节目取值了
         for (elem <- item._2.iterator) {
           if ("".equals(time)) time = elem._2.toString
-          else time = DataUtils.getMaxDate(elem._2.toString, time)
-          if (score < elem._4) score = elem._4
-          if (keywords.length == 0) keywords.++=(elem._3)
+          else time = DataUtils.getMaxDate(elem._2.toString, time) //取去时间大的那个时间
+          if (score < elem._4) score = elem._4 // 取分值最大的那个，根据分值的计算方法，最近观看的那个节目的分值最大，
+          if (keywords.length == 0) keywords.++=(elem._3) //对于同一个节目来说keywords是一样的，所有只需要加载一次就可以了
         }
         (userID, (itemID, time, keywords, score))
       })
