@@ -13,6 +13,10 @@ import scala.collection.mutable.ListBuffer
 
 object UserProfile {
 
+  /**
+    * 绘制用户画像
+    * 通过用户喜欢的节目来给用户打标签
+    */
 
   def main(args: Array[String]): Unit = {
 
@@ -22,17 +26,13 @@ object UserProfile {
 
     val TOTAL_SCORE = 10
 
-    /**
-      * 绘制用户画像
-      * 通过用户喜欢的节目来给用户打标签
-      */
     val userAction = session.table("recommender.user_action").limit(1000)
     val itemKeyWord = session.table("tmp_program.item_keyword")
     val userInfo = session.table("recommender.user_info")
     val itemInfo = session.table("recommender.item_info")
 
     val itemID2ActionRDD = userAction.map(row => {
-      val userID = row.getAs[String]("sn")
+      val userID = row.getAs[String]("sn") //userId
       val itemID = row.getAs[Long]("item_id")
       val duration = row.getAs[Long]("duration")
       val time = row.getAs[String]("time")
@@ -41,7 +41,7 @@ object UserProfile {
 
     val itemID2KeyWordRDD = itemKeyWord.map(row => {
       val itemID = row.getAs[Long]("item_id")
-      val keywords = row.getAs[Seq[String]]("keyword")
+      val keywords = row.getAs[Seq[String]]("keyword") //节目的关键词
       (itemID, keywords)
     }).rdd
 
@@ -80,6 +80,7 @@ object UserProfile {
 //    session.sql("select * from tmp_program.item_keyword a join recommender.user_action b on a.item_id=b.item_id")
 //      .show(10)
 
+    // 行为数据 (itemID, (userID, duration, time))和 节目关键词(itemID, keywords)进行join
     val userID2LabelRDD: RDD[(String, (Long, String, ListBuffer[String], Double))] = itemID2ActionRDD
       .join(itemID2KeyWordRDD)
       .map(item => {
@@ -88,10 +89,11 @@ object UserProfile {
         val duration = item._2._1._2
         val time = item._2._1._3
         val keywords = item._2._2
-        val itemID2LengthMap = itemID2LengthMapBroad.value
+        val itemID2LengthMap = itemID2LengthMapBroad.value //节目信息广播变量
         val length = itemID2LengthMap.get(itemID).get
-        // TODO: 数据需要修改
-        val score = if (duration < length) {
+        // TODO: 根据用户观看视频的时长来给客户打分，观看节目的时间距离现在时间，来进行一个衰减系数的惩罚
+        // todo 衰减系数是根据人的习惯，越久之前观看过的视频到现在可能不喜欢了
+        val score = if (duration <= length) {
           val durationScale = (duration * 1.0) / length
           val scalaScore = durationScale * TOTAL_SCORE
           val days = DataUtils.getDayDiff(time)
@@ -100,7 +102,7 @@ object UserProfile {
           attenCoeff * scalaScore
         } else 0.0
         ((itemID, userID), (duration, time, keywords, score))
-      }).groupByKey()
+      }).groupByKey() //然后根据UseID和ItemId分组（其实上面已经用ItemId分过组了），计算用户的便签和对应的分值
       .map(item => {
         val (itemID, userID) = item._1
         var time = ""

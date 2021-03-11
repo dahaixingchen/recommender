@@ -16,12 +16,15 @@ object ContentRecall {
   def main(args: Array[String]): Unit = {
     val session = SparkSessionBase.createSparkSession()
     session.sparkContext.setLogLevel("error")
+
+    //为了拿到对应节目的总时长
     val df = session.sql(
       "SELECT a.sn, a.item_id,a.duration,b.length " +
         "FROM recommender.user_action a " +
         "JOIN recommender.item_info b ON a.item_id = b.id where a.sn != 'unknown' ")
       .limit(1000)
 
+    //过滤数据
     val itemID2userID = df.rdd.flatMap(row => {
       val list = new ListBuffer[(Int, String)]()
       val userID = row.getAs[String]("sn")
@@ -29,6 +32,7 @@ object ContentRecall {
       val itemID = row.getAs[Long]("item_id").toInt
       val duration = row.getAs[Long]("duration")
       val length = row.getAs[Long]("length")
+
 
       if (duration < length) {
         val scalaDuration = (duration * 1.0) / length
@@ -51,7 +55,8 @@ object ContentRecall {
       classOf[ImmutableBytesWritable],
       classOf[Result])
 
-    var similarPro = hbaseRdd.flatMap(data => {
+    //从Hbase中得到节目相识度数据
+    val similarPro: RDD[(Int, Int)] = hbaseRdd.flatMap(data => {
       val list = new ListBuffer[(Int, Int)]()
       val result = data._2
       for (rowKv <- result.rawCells()) {
@@ -62,6 +67,7 @@ object ContentRecall {
       }
       list.iterator
     })
+
 
     itemID2userID.join(similarPro).map(x => {
       (x._2._1, x._2._2)

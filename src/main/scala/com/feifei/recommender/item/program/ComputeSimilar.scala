@@ -15,6 +15,7 @@ import scala.collection.mutable.ArrayBuffer
   * ntpdate ntp1.aliyun.com
   * 计算每个节目的向量存入到hive表中
   * 根据LSH（局部敏感hash算法）把每个节目的跟其他节目的距离算好放入HBASE中
+  *
   */
 object ComputeSimilar {
 
@@ -90,7 +91,7 @@ object ComputeSimilar {
           values += (nWht)
         }
       }
-      //得到这个节目下，利用one-hot编码得到的词袋的向量，
+      //得到这个节目下，词袋中各个词的向量，
       val vector: SparseVector = new SparseVector(word2Index.size, indexs.toArray.sorted, values.toArray)
       //节目id和这个向量
       (itemID, vector.toDense)
